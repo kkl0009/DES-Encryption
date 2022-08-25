@@ -1,0 +1,229 @@
+#!/usr/bin/python3
+
+"""
+This program was created by Kollin Labowski to complete Programming Assignment 1
+for CS 465. The program will take an input text and a key from 2 separate files
+and encrypt the message using the given key
+"""
+
+# Enter the names of the file paths to the input and key files here
+input_file_path = 'input.txt'
+key_file_path = 'key.txt'
+output_file_path = 'output.txt'
+
+"""
+The following function is used to get the input text and the key from their
+respective files so that they may be used throughout the execution of the
+program
+"""
+def get_input(input_path, key_path):
+	input_file = open(input_path, 'r')
+	plaintext = input_file.read()
+	input_file.close()
+
+	key_file = open(key_path, 'r')
+	key = key_file.read()
+	key_file.close()
+
+	return plaintext, key
+
+"""
+The following function removes all characters from the plaintext message that are not
+uppercase letters
+"""
+def process_input(input_string):
+	for x in input_string:
+		if x < 'A' or x > 'Z':
+			input_string = input_string.replace(x, "", 1)
+
+	return input_string
+
+"""
+The following function encrypts the given input string using a Vigenere cipher with
+the given key, and returns the resulting ciphertext
+"""
+def vigenere_cipher(input_string, key):
+	ciphertext = ""
+	for i in range(0, len(input_string)):
+		input_int = ord(input_string[i]) - ord('A')
+		key_int = ord(key[i % len(key)]) - ord('A')
+
+		input_int = (input_int + key_int) % 26
+
+		input_int = chr(input_int + ord('A'))
+		ciphertext = ciphertext + input_int
+
+	return ciphertext
+
+"""
+The following function will divide the input string into 4x4 arrays (lists in lists), and return
+all of the arrays together in a list. It will add 'A' characters as padding in any
+additional space not filled in the final array
+"""
+def as_arrays(input_string):
+	list_of_arrays = []
+	index = 0
+	while index < len(input_string):
+		outer_array = []
+		for i in range(0, 4):
+			inner_array = []
+			for j in range(0, 4):
+				if index < len(input_string):
+					inner_array.append(input_string[index])
+					index = index + 1
+				else:
+					inner_array.append('A')
+			outer_array.append(inner_array)
+		list_of_arrays.append(outer_array)
+	return list_of_arrays
+
+"""
+The following function is used to print the list of arrays out in a human-legible format
+to determine whether the data is being properly stored in the structure
+"""
+def print_arrays(list_of_arrays, output_file):
+	for i in range(0, len(list_of_arrays)):
+		for j in range(0, len(list_of_arrays[i])):
+			line = ""
+			for k in range(0, len(list_of_arrays[i][j])):
+				line = line + list_of_arrays[i][j][k] + " "
+			output_file.write(line + '\n')
+		output_file.write('\n')
+
+"""
+The following function will shift the second row in each 2D array left by 1, the third row
+by 2, and the fourth row by 3. It will return the new array with the shifted rows
+"""
+def shift_rows(list_of_arrays):
+	for i in range(0, len(list_of_arrays)):
+		for j in range(0, len(list_of_arrays[i])):
+			for k in range(0, j):
+				temp = list_of_arrays[i][j][0]
+				for m in range(0, len(list_of_arrays[i][j]) - 1):
+					list_of_arrays[i][j][m] = list_of_arrays[i][j][m + 1]
+				list_of_arrays[i][j][len(list_of_arrays[i][j]) - 1] = temp
+
+	return list_of_arrays
+
+"""
+Convert the arrays of characters to a new structure which is instead a list of their hexadecimal
+representations, with a parity bit in the MSB of each number's binary representation
+"""
+def parity_conversion(list_of_arrays):
+	for i in range(0, len(list_of_arrays)):
+		for j in range(0, len(list_of_arrays[i])):
+			for k in range(0, len(list_of_arrays[i][j])):
+				char_as_int = ord(list_of_arrays[i][j][k])
+				char_as_int = adjust_parity(char_as_int)
+				list_of_arrays[i][j][k] = char_as_int
+
+	return list_of_arrays
+
+"""
+Determine whether the parity of the number is odd or even, and if it is odd, set the MSB so that
+the parity is even. This is a helper function for parity_conversion
+"""
+def adjust_parity(check_int):
+	num_ones = 0
+	for i in range(0, 7):
+		if check_int & 2 ** i != 0:
+			num_ones = num_ones + 1
+
+	if num_ones % 2 == 0:
+		return check_int
+
+	return check_int | 128
+
+"""
+Print out the arrays with each value in its hexadecimal representation instead of its character
+representation to demonstrate correct output
+"""
+def print_hex_arrays(list_of_arrays, output_file):
+	for i in range(0, len(list_of_arrays)):
+		for j in range(0, len(list_of_arrays[i])):
+			line = ""
+			for k in range(0, len(list_of_arrays[i][j])):
+				line = line + str(hex(list_of_arrays[i][j][k]))[2:4] + " "
+			output_file.write(line + '\n')
+		output_file.write('\n')
+
+"""
+A helper function for the below mix_columns function. It performs Rijndael's Galois field multiplication
+on an input value with either 2 or 3 (other values for the number parameter are invalid)
+"""
+def RGF_mult(value, number):
+	original_value = value
+	if number == 2:
+		value = value << 1
+		value = value & 0b11111111
+		if original_value & 0b10000000 != 0:
+			value = value ^ 0b00011011
+	elif number == 3:
+		value = value << 1
+		value = value & 0b11111111
+		value = value ^ original_value
+		if original_value & 0b10000000 != 0:
+			value = value ^ 0b00011011
+	else:
+		print("Invalid input for RGF_mult function")
+
+	return value
+
+"""
+This function performs the matrix multiplication to mix up the columns of the arrays in the structure, and
+it returns the structure with the newly arranged arrays
+"""
+def mix_columns(list_of_arrays):
+	for i in range(0, len(list_of_arrays)):
+		for j in range(0, len(list_of_arrays[i][0])):
+			c0 = list_of_arrays[i][0][j]
+			c1 = list_of_arrays[i][1][j]
+			c2 = list_of_arrays[i][2][j]
+			c3 = list_of_arrays[i][3][j]
+			a0 = RGF_mult(c0, 2) ^ RGF_mult(c1, 3) ^ c2 ^ c3
+			a1 = c0 ^ RGF_mult(c1, 2) ^ RGF_mult(c2, 3) ^ c3
+			a2 = c0 ^ c1 ^ RGF_mult(c2, 2) ^ RGF_mult(c3, 3)
+			a3 = RGF_mult(c0, 3) ^ c1 ^ c2 ^ RGF_mult(c3, 2)
+			list_of_arrays[i][0][j] = a0
+			list_of_arrays[i][1][j] = a1
+			list_of_arrays[i][2][j] = a2
+			list_of_arrays[i][3][j] = a3
+
+	return list_of_arrays
+
+"""
+The following segment of code acts as the main method, and is where execution of
+the program will begin
+"""
+
+output_file = open(output_file_path, 'w')
+
+plaintext, key = get_input(input_file_path, key_file_path) # Read Files
+output_file.write("Step 0: Reading from input file\n\nPlaintext: " + plaintext + "\nKey: " + key)
+
+plaintext = process_input(plaintext) # Preprocessing (5 pts)
+output_file.write("\n\nStep 1: Preprocessing\n\nProcessed Input: " + plaintext)
+
+ciphertext = vigenere_cipher(plaintext, key) # Substitution (25 pts)
+output_file.write("\n\nStep 2: Substitution\n\nCiphertext: " + ciphertext)
+
+cipher_arrays = as_arrays(ciphertext) # Padding (5 pts)
+
+output_file.write("\n\nStep 3: Padding\n\n")
+print_arrays(cipher_arrays, output_file)
+
+cipher_arrays = shift_rows(cipher_arrays) # ShiftRows (15 pts)
+output_file.write("\n\nStep 4: Shift Rows\n\n")
+print_arrays(cipher_arrays, output_file)
+
+cipher_arrays = parity_conversion(cipher_arrays) # Parity Bit (10 pts)
+output_file.write("\n\nStep 5: Parity Bit\n\n")
+print_hex_arrays(cipher_arrays, output_file)
+
+cipher_arrays = mix_columns(cipher_arrays)
+output_file.write("\n\nStep 6: Mix Columns\n\n")
+print_hex_arrays(cipher_arrays, output_file)
+
+output_file.close()
+
+print("Execution complete, view results in the output.txt file")
